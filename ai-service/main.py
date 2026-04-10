@@ -14,13 +14,13 @@ from dateparser import parse as parse_date
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[os.getenv("FRONTEND_URL", "*")],
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
 # MongoDB setup
-client = MongoClient("mongodb://127.0.0.1:27017")
+client = MongoClient(os.getenv("MONGO_URL"))
 db = client["echo_audit"]
 tasks_collection = db["tasks"]
 

@@ -6,24 +6,33 @@ const fs = require("fs");
 const path = require("path");
 const cors = require("cors");
 const mongoose = require("mongoose");
-
-// MongoDB Connection
-mongoose.connect("mongodb://127.0.0.1:27017/echo_audit")
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ MongoDB connection error:", err));
+require("dotenv").config(); // ✅ load .env
 
 const app = express();
 
+// ✅ MongoDB Connection (Atlas)
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
+
+// ✅ Folders setup
 const tempDir = path.join(__dirname, "temp");
 const savedDir = path.join(__dirname, "saved_audio");
 
 if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 if (!fs.existsSync(savedDir)) fs.mkdirSync(savedDir);
 
+// ✅ Multer config
 const upload = multer({ dest: tempDir });
 
-app.use(cors({ origin: "http://localhost:3000" }));
+// ✅ CORS (allow frontend)
+app.use(cors({
+  origin: process.env.FRONTEND_URL || "*"
+}));
 
+app.use(express.json());
+
+// ✅ Upload Route
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -34,14 +43,18 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     const savedPath = path.join(savedDir, `recording_${Date.now()}.webm`);
     fs.renameSync(req.file.path, savedPath);
 
-    // Send file to FastAPI
+    // Send file to AI Service
     const form = new FormData();
     form.append("file", fs.createReadStream(savedPath));
 
-    const response = await axios.post("http://127.0.0.1:8000/process", form, {
-      headers: form.getHeaders(),
-      maxBodyLength: Infinity,
-    });
+    const response = await axios.post(
+      process.env.AI_SERVICE_URL, // ✅ from .env
+      form,
+      {
+        headers: form.getHeaders(),
+        maxBodyLength: Infinity,
+      }
+    );
 
     res.json({
       text: response.data.text,
@@ -56,6 +69,9 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-app.listen(3001, () => {
-  console.log("✅ Node server running on http://localhost:3001");
+// ✅ Dynamic Port (important for deployment)
+const PORT = process.env.PORT || 3001;
+
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
