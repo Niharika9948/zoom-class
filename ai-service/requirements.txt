@@ -6,3 +6,4 @@ torch
 python-multipart
 pymongo
 python-dotenv
+spacy==3.7.5
