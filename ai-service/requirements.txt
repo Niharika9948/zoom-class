@@ -8,6 +8,4 @@ pymongo
 python-dotenv
 dateparser
 spacy==3.7.4
-thinc==8.2.3
-blis==0.7.11
 numpy==1.26.4
