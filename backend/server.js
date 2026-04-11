@@ -12,8 +12,8 @@ const app = express();
 
 // -------------------- MongoDB --------------------
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.error("MongoDB error:", err));
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB error:", err));
 
 // -------------------- Folders --------------------
 const tempDir = "/tmp";   // ✅ IMPORTANT FOR RENDER
@@ -34,24 +34,34 @@ app.use(express.json());
 // -------------------- Upload Route --------------------
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
+    console.log("📥 File received");
+
     if (!req.file) {
+      console.log("❌ No file received");
       return res.status(400).json({ error: "No file received" });
     }
 
     const savedPath = path.join(savedDir, `recording_${Date.now()}.webm`);
     fs.renameSync(req.file.path, savedPath);
 
+    console.log("✅ File saved at:", savedPath);
+
     const form = new FormData();
     form.append("file", fs.createReadStream(savedPath));
 
+    console.log("🚀 Sending to AI service...");
+
+    // 🔥 FIXED: Added /process
     const response = await axios.post(
-      process.env.AI_SERVICE_URL,
+      `${process.env.AI_SERVICE_URL}/process`,
       form,
       {
         headers: form.getHeaders(),
         maxBodyLength: Infinity,
       }
     );
+
+    console.log("🧠 AI response received");
 
     res.json({
       text: response.data.text,
@@ -61,19 +71,27 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Processing failed" });
+    console.error("❌ ERROR:", err.message);
+
+    if (err.response) {
+      console.error("❌ AI ERROR RESPONSE:", err.response.data);
+    }
+
+    res.status(500).json({
+      error: "Processing failed",
+      details: err.message
+    });
   }
 });
 
 // -------------------- Health Route --------------------
 app.get("/", (req, res) => {
-  res.send("Backend is running");
+  res.send("✅ Backend is running");
 });
 
 // -------------------- Start Server --------------------
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });

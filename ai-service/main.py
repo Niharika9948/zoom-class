@@ -2,7 +2,6 @@ import os
 import uuid
 import shutil
 import re
-import gc
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +16,7 @@ import dateparser
 # =========================
 app = FastAPI()
 
+# ✅ FINAL CORS (secure + working)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("FRONTEND_URL", "*")],
@@ -32,25 +32,22 @@ db = client["echo_audit"]
 tasks_collection = db["tasks"]
 
 # =========================
-# WHISPER (MEMORY SAFE LAZY LOADING)
+# WHISPER (LOAD ONCE ONLY)
 # =========================
 model = None
 
 def get_model():
     global model
     if model is None:
+        print("🧠 Loading Whisper model...")
         model = whisper.load_model("tiny", device="cpu")
+        print("✅ Model loaded")
     return model
 
 
 def transcribe_audio(path):
     m = get_model()
     result = m.transcribe(path, fp16=False)
-
-    # free memory after use (important for Render)
-    del m
-    gc.collect()
-
     return result
 
 # =========================
@@ -70,7 +67,7 @@ TASK_KEYWORDS = [
 SENTENCE_REGEX = re.compile(r'[^.!?]+[.!?]?')
 
 # =========================
-# TASK EXTRACTION (NO SPA CY)
+# TASK EXTRACTION
 # =========================
 def extract_tasks(text):
     tasks = []
@@ -104,10 +101,12 @@ def extract_tasks(text):
     return tasks
 
 # =========================
-# AUDIO PROCESSING ENDPOINT
+# AUDIO PROCESSING
 # =========================
 @app.post("/process")
 async def process_audio(file: UploadFile = File(...)):
+
+    print("📥 Received file")
 
     audio_id = str(uuid.uuid4())
     ext = os.path.splitext(file.filename)[1] or ".webm"
@@ -116,15 +115,20 @@ async def process_audio(file: UploadFile = File(...)):
     with open(audio_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
+    print("✅ File saved:", audio_path)
+
     try:
-        # MEMORY SAFE TRANSCRIPTION
+        print("🧠 Transcribing...")
         result = transcribe_audio(audio_path)
-        text = result["text"]
+        text = result.get("text", "")
+        print("🧠 Text:", text)
 
     except Exception as e:
+        print("❌ ERROR:", str(e))
         return JSONResponse(status_code=500, content={"error": str(e)})
 
     tasks = extract_tasks(text)
+    print("📋 Tasks:", tasks)
 
     txt_file = f"{audio_id}.txt"
     txt_path = os.path.join("recordings", txt_file)
