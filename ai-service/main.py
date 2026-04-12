@@ -2,7 +2,6 @@ import os
 import uuid
 import shutil
 import re
-import threading
 
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,7 +12,7 @@ import whisper
 import dateparser
 
 # =========================
-# FASTAPI SETUP
+# APP SETUP
 # =========================
 app = FastAPI()
 
@@ -25,40 +24,31 @@ app.add_middleware(
 )
 
 # =========================
-# MONGODB
+# MONGO DB
 # =========================
-client = MongoClient(os.getenv("MONGO_URL"))
+client = MongoClient(os.getenv("MONGO_URL"), serverSelectionTimeoutMS=5000)
 db = client["echo_audit"]
 tasks_collection = db["tasks"]
 
+print("✅ MongoDB connected")
+
 # =========================
-# WHISPER MODEL (FIXED)
+# WHISPER MODEL
 # =========================
 model = None
 
+@app.on_event("startup")
 def load_model():
     global model
-    print("🧠 Loading Whisper model at startup...")
-    model = whisper.load_model("tiny", device="cpu")
-    print("✅ Model loaded successfully")
-
-# ✅ LOAD MODEL ON STARTUP (IMPORTANT FIX)
-@app.on_event("startup")
-def startup_event():
-    threading.Thread(target=load_model).start()
-
-def transcribe_audio(path):
-    global model
-    if model is None:
-        raise Exception("Model not loaded yet. Please wait and try again.")
-    
-    result = model.transcribe(path, fp16=False)
-    return result
+    print("🧠 Loading Whisper model...")
+    model = whisper.load_model("base", device="cpu")
+    print("✅ Whisper model loaded")
 
 # =========================
-# FOLDER SETUP
+# FILE STORAGE
 # =========================
-os.makedirs("recordings", exist_ok=True)
+BASE_DIR = "/tmp"
+os.makedirs(BASE_DIR, exist_ok=True)
 
 # =========================
 # TASK KEYWORDS
@@ -66,38 +56,52 @@ os.makedirs("recordings", exist_ok=True)
 TASK_KEYWORDS = [
     "write", "read", "revise", "note", "notes",
     "practice", "remember", "homework",
-    "assignment", "finish", "complete", "project"
+    "assignment", "finish", "complete", "project",
+    "study", "prepare", "submit"
 ]
 
 SENTENCE_REGEX = re.compile(r'[^.!?]+[.!?]?')
 
 # =========================
-# TASK EXTRACTION
+# TRANSCRIPTION
+# =========================
+def transcribe_audio(path):
+    global model
+    if model is None:
+        return {"text": "Model still loading. Try again in a few seconds."}
+
+    result = model.transcribe(path, fp16=False)
+    return result
+
+# =========================
+# TASK EXTRACTION (IMPROVED)
 # =========================
 def extract_tasks(text):
     tasks = []
     sentences = [s.strip() for s in SENTENCE_REGEX.findall(text) if s.strip()]
 
     for sentence in sentences:
-        words = sentence.lower().split()
+        lower_sentence = sentence.lower()
 
-        if any(kw in words for kw in TASK_KEYWORDS):
+        if any(kw in lower_sentence for kw in TASK_KEYWORDS):
 
+            # deadline detection
             deadline = None
+            date_match = re.search(r'\b(by|before|on|due)\s+(.+)', lower_sentence)
 
-            date_match = re.search(r'\b(by|before|on|due)\s+(.+)', sentence.lower())
             if date_match:
                 parsed = dateparser.parse(date_match.group(2))
                 if parsed:
                     deadline = parsed.strftime("%Y-%m-%d %H:%M")
 
             task_data = {
-                "task": sentence.strip(),
+                "task": sentence,
                 "completed": False,
                 "priority": "medium",
                 "deadline": deadline
             }
 
+            # avoid duplicates
             if not tasks_collection.find_one({"task": task_data["task"]}):
                 inserted = tasks_collection.insert_one(task_data)
                 task_data["_id"] = str(inserted.inserted_id)
@@ -106,78 +110,96 @@ def extract_tasks(text):
     return tasks
 
 # =========================
-# AUDIO PROCESSING
+# MAIN API
 # =========================
 @app.post("/process")
 async def process_audio(file: UploadFile = File(...)):
 
-    print("📥 Received file")
+    print("📥 File received")
 
     audio_id = str(uuid.uuid4())
     ext = os.path.splitext(file.filename)[1] or ".webm"
-    audio_path = f"recordings/{audio_id}{ext}"
+
+    audio_path = f"{BASE_DIR}/{audio_id}{ext}"
 
     with open(audio_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    print("✅ File saved:", audio_path)
+    print("✅ Saved:", audio_path)
 
     try:
         print("🧠 Transcribing...")
         result = transcribe_audio(audio_path)
         text = result.get("text", "")
-        print("🧠 Text:", text)
+        print("🧠 Transcript:", text)
 
     except Exception as e:
-        print("❌ ERROR:", str(e))
+        print("❌ Error:", str(e))
         return JSONResponse(status_code=500, content={"error": str(e)})
 
+    # extract tasks
     tasks = extract_tasks(text)
-    print("📋 Tasks:", tasks)
 
+    # save transcript
     txt_file = f"{audio_id}.txt"
-    txt_path = os.path.join("recordings", txt_file)
+    txt_path = f"{BASE_DIR}/{txt_file}"
 
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(text)
 
     return {
+        "success": True,
         "text": text,
         "tasks": tasks,
+        "task_count": len(tasks),
         "txt_file": txt_file
     }
 
 # =========================
-# TASK APIs
+# GET TASKS
 # =========================
 @app.get("/tasks")
 def get_tasks():
-    all_tasks = list(tasks_collection.find({}))
-    for t in all_tasks:
+    tasks = list(tasks_collection.find({}))
+    for t in tasks:
         t["_id"] = str(t["_id"])
-    return all_tasks
+    return tasks
 
-
+# =========================
+# COMPLETE TASK
+# =========================
 @app.post("/complete")
 def complete_task(task: dict):
+
     if "task" not in task:
-        return {"error": "Missing 'task' key"}
+        return {"error": "Missing task field"}
 
     tasks_collection.update_one(
         {"task": task["task"]},
         {"$set": {"completed": True}}
     )
 
-    return {"status": "done"}
+    return {"status": "completed"}
 
 # =========================
 # DOWNLOAD TRANSCRIPT
 # =========================
 @app.get("/download/{filename}")
-def download_txt(filename: str):
-    file_path = os.path.join("recordings", filename)
+def download_file(filename: str):
+
+    file_path = f"{BASE_DIR}/{filename}"
 
     if not os.path.exists(file_path):
         return JSONResponse(status_code=404, content={"error": "File not found"})
 
     return FileResponse(file_path, media_type="text/plain", filename=filename)
+
+# =========================
+# HEALTH CHECK
+# =========================
+@app.get("/")
+def home():
+    return {
+        "status": "running",
+        "message": "AI Audio Transcription API is working"
+    }
