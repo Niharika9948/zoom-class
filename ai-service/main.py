@@ -18,7 +18,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "*")],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"]
 )
@@ -33,19 +33,7 @@ tasks_collection = db["tasks"]
 print("✅ MongoDB connected")
 
 # =========================
-# WHISPER MODEL
-# =========================
-model = None
-
-@app.on_event("startup")
-def load_model():
-    global model
-    print("🧠 Loading Whisper model...")
-    model = whisper.load_model("tiny", device="cpu")
-    print("✅ Whisper model loaded")
-
-# =========================
-# FILE STORAGE
+# STORAGE
 # =========================
 BASE_DIR = "/tmp"
 os.makedirs(BASE_DIR, exist_ok=True)
@@ -56,41 +44,50 @@ os.makedirs(BASE_DIR, exist_ok=True)
 TASK_KEYWORDS = [
     "write", "read", "revise", "note", "notes",
     "practice", "remember", "homework",
-    "assignment", "finish", "complete", "project",
+    "assignment", "finish", "complete",
     "study", "prepare", "submit"
 ]
 
 SENTENCE_REGEX = re.compile(r'[^.!?]+[.!?]?')
 
 # =========================
-# TRANSCRIPTION
+# LOAD MODEL ONLY WHEN NEEDED (IMPORTANT FIX)
 # =========================
-def transcribe_audio(path):
+model = None
+
+def get_model():
     global model
     if model is None:
-        return {"text": "Model still loading. Try again in a few seconds."}
+        print("🧠 Loading Whisper model (first request)...")
+        model = whisper.load_model("tiny", device="cpu")
+        print("✅ Model loaded")
+    return model
 
+# =========================
+# TRANSCRIBE
+# =========================
+def transcribe_audio(path):
+    model = get_model()
     result = model.transcribe(path, fp16=False)
     return result
 
 # =========================
-# TASK EXTRACTION (IMPROVED)
+# TASK EXTRACTION
 # =========================
 def extract_tasks(text):
     tasks = []
     sentences = [s.strip() for s in SENTENCE_REGEX.findall(text) if s.strip()]
 
     for sentence in sentences:
-        lower_sentence = sentence.lower()
+        lower = sentence.lower()
 
-        if any(kw in lower_sentence for kw in TASK_KEYWORDS):
+        if any(kw in lower for kw in TASK_KEYWORDS):
 
-            # deadline detection
             deadline = None
-            date_match = re.search(r'\b(by|before|on|due)\s+(.+)', lower_sentence)
+            match = re.search(r'\b(by|before|on|due)\s+(.+)', lower)
 
-            if date_match:
-                parsed = dateparser.parse(date_match.group(2))
+            if match:
+                parsed = dateparser.parse(match.group(2))
                 if parsed:
                     deadline = parsed.strftime("%Y-%m-%d %H:%M")
 
@@ -101,8 +98,7 @@ def extract_tasks(text):
                 "deadline": deadline
             }
 
-            # avoid duplicates
-            if not tasks_collection.find_one({"task": task_data["task"]}):
+            if not tasks_collection.find_one({"task": sentence}):
                 inserted = tasks_collection.insert_one(task_data)
                 task_data["_id"] = str(inserted.inserted_id)
                 tasks.append(task_data)
@@ -115,32 +111,22 @@ def extract_tasks(text):
 @app.post("/process")
 async def process_audio(file: UploadFile = File(...)):
 
-    print("📥 File received")
-
     audio_id = str(uuid.uuid4())
     ext = os.path.splitext(file.filename)[1] or ".webm"
-
     audio_path = f"{BASE_DIR}/{audio_id}{ext}"
 
     with open(audio_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
 
-    print("✅ Saved:", audio_path)
-
     try:
-        print("🧠 Transcribing...")
         result = transcribe_audio(audio_path)
-        text = result.get("text", "")
-        print("🧠 Transcript:", text)
+        text = result["text"]
 
     except Exception as e:
-        print("❌ Error:", str(e))
         return JSONResponse(status_code=500, content={"error": str(e)})
 
-    # extract tasks
     tasks = extract_tasks(text)
 
-    # save transcript
     txt_file = f"{audio_id}.txt"
     txt_path = f"{BASE_DIR}/{txt_file}"
 
@@ -148,7 +134,6 @@ async def process_audio(file: UploadFile = File(...)):
         f.write(text)
 
     return {
-        "success": True,
         "text": text,
         "tasks": tasks,
         "task_count": len(tasks),
@@ -156,7 +141,7 @@ async def process_audio(file: UploadFile = File(...)):
     }
 
 # =========================
-# GET TASKS
+# TASKS API
 # =========================
 @app.get("/tasks")
 def get_tasks():
@@ -165,41 +150,29 @@ def get_tasks():
         t["_id"] = str(t["_id"])
     return tasks
 
-# =========================
-# COMPLETE TASK
-# =========================
 @app.post("/complete")
 def complete_task(task: dict):
-
-    if "task" not in task:
-        return {"error": "Missing task field"}
-
     tasks_collection.update_one(
         {"task": task["task"]},
         {"$set": {"completed": True}}
     )
-
-    return {"status": "completed"}
+    return {"status": "ok"}
 
 # =========================
-# DOWNLOAD TRANSCRIPT
+# DOWNLOAD
 # =========================
 @app.get("/download/{filename}")
 def download_file(filename: str):
-
     file_path = f"{BASE_DIR}/{filename}"
 
     if not os.path.exists(file_path):
-        return JSONResponse(status_code=404, content={"error": "File not found"})
+        return JSONResponse(status_code=404, content={"error": "Not found"})
 
     return FileResponse(file_path, media_type="text/plain", filename=filename)
 
 # =========================
-# HEALTH CHECK
+# HEALTH
 # =========================
 @app.get("/")
 def home():
-    return {
-        "status": "running",
-        "message": "AI Audio Transcription API is working"
-    }
+    return {"status": "running"}
