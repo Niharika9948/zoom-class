@@ -41,7 +41,7 @@ model = None
 def load_model():
     global model
     print("🧠 Loading Whisper model...")
-    model = whisper.load_model("base", device="cpu")
+    model = whisper.load_model("tiny", device="cpu")
     print("✅ Whisper model loaded")
 
 # =========================
