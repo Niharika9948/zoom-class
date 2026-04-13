@@ -1,3 +1,6 @@
+
+
+
 const express = require("express");
 const multer = require("multer");
 const axios = require("axios");
@@ -6,62 +9,42 @@ const fs = require("fs");
 const path = require("path");
 const cors = require("cors");
 const mongoose = require("mongoose");
-require("dotenv").config();
+
+// MongoDB Connection
+mongoose.connect("mongodb://127.0.0.1:27017/echo_audit")
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("❌ MongoDB connection error:", err));
 
 const app = express();
 
-// -------------------- MongoDB --------------------
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch((err) => console.error("❌ MongoDB error:", err));
-
-// -------------------- Folders --------------------
-const tempDir = "/tmp";   // ✅ IMPORTANT FOR RENDER
+const tempDir = path.join(__dirname, "temp");
 const savedDir = path.join(__dirname, "saved_audio");
 
+if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 if (!fs.existsSync(savedDir)) fs.mkdirSync(savedDir);
 
-// -------------------- Multer --------------------
 const upload = multer({ dest: tempDir });
 
-// -------------------- Middleware --------------------
-app.use(cors({
-  origin: process.env.FRONTEND_URL || "*"
-}));
+app.use(cors({ origin: "http://localhost:3000" }));
 
-app.use(express.json());
-
-// -------------------- Upload Route --------------------
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    console.log("📥 File received");
-
     if (!req.file) {
-      console.log("❌ No file received");
       return res.status(400).json({ error: "No file received" });
     }
 
+    // Save uploaded audio
     const savedPath = path.join(savedDir, `recording_${Date.now()}.webm`);
     fs.renameSync(req.file.path, savedPath);
 
-    console.log("✅ File saved at:", savedPath);
-
+    // Send file to FastAPI
     const form = new FormData();
     form.append("file", fs.createReadStream(savedPath));
 
-    console.log("🚀 Sending to AI service...");
-
-    // 🔥 FIXED: Added /process
-    const response = await axios.post(
-      `${process.env.AI_SERVICE_URL}/process`,
-      form,
-      {
-        headers: form.getHeaders(),
-        maxBodyLength: Infinity,
-      }
-    );
-
-    console.log("🧠 AI response received");
+    const response = await axios.post("http://127.0.0.1:8000/process", form, {
+      headers: form.getHeaders(),
+      maxBodyLength: Infinity,
+    });
 
     res.json({
       text: response.data.text,
@@ -71,27 +54,11 @@ app.post("/upload", upload.single("file"), async (req, res) => {
     });
 
   } catch (err) {
-    console.error("❌ ERROR:", err.message);
-
-    if (err.response) {
-      console.error("❌ AI ERROR RESPONSE:", err.response.data);
-    }
-
-    res.status(500).json({
-      error: "Processing failed",
-      details: err.message
-    });
+    console.error("Upload error:", err.message);
+    res.status(500).json({ error: "Processing failed" });
   }
 });
 
-// -------------------- Health Route --------------------
-app.get("/", (req, res) => {
-  res.send("✅ Backend is running");
-});
-
-// -------------------- Start Server --------------------
-const PORT = process.env.PORT || 10000;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+app.listen(3001, () => {
+  console.log("✅ Node server running on http://localhost:3001");
 });
