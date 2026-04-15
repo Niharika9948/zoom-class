@@ -1,5 +1,3 @@
-gitignore
-
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
@@ -20,7 +18,24 @@ gitignore
 .env.test.local
 .env.production.local
 
-
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# -----------------------------
+# ✅ ADDED (your project files)
+# -----------------------------
+
+# Ignore recordings folder
+ai-service/recordings/
+
+# Ignore backend saved audio
+backend/saved_audio/
+
+# Ignore audio files
+*.webm
+*.mp3
+*.wav
+
+# Ignore text transcripts (optional)
+*.txt

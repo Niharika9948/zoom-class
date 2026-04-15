@@ -1,16 +1,109 @@
-body { margin: 0; font-family: "Segoe UI", sans-serif; background: linear-gradient(135deg, #667eea, #764ba2); }
-.app { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-.card { background: white; width: 450px; padding: 30px; border-radius: 16px; box-shadow: 0 25px 50px rgba(0,0,0,0.2); text-align: center; }
-h1 { margin-bottom: 5px; }
-.subtitle { color: #666; margin-bottom: 25px; }
-.controls button { width: 100%; padding: 14px; border-radius: 30px; border: none; font-size: 16px; cursor: pointer; }
-.record { background: #ff4757; color: white; }
-.stop { background: #2f3542; color: white; }
-.pulse { width: 16px; height: 16px; margin: 15px auto; background: red; border-radius: 50%; animation: pulse 1s infinite; }
-@keyframes pulse { 0% { transform: scale(1); opacity:1; } 100% { transform: scale(2); opacity:0; } }
-.loading { margin-top: 20px; color: #555; }
-.output { margin-top:25px; text-align:left; background:#f5f6fa; padding:15px; border-radius:10px; max-height:200px; overflow-y:auto; }
-.download { margin-top:15px; width:100%; padding:12px; background:#1e90ff; color:white; border-radius:25px; border:none; cursor:pointer; }
-.tasks { margin-top:20px; text-align:left; }
-.task { display:flex; align-items:center; margin-bottom:8px; }
-.task.done { text-decoration:line-through; color:gray; }
+body {
+  margin: 0;
+  font-family: "Segoe UI", sans-serif;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card {
+  background: white;
+  width: 450px;
+  padding: 30px;
+  border-radius: 16px;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.2);
+  text-align: center;
+}
+
+h1 {
+  margin-bottom: 5px;
+}
+
+.subtitle {
+  color: #666;
+  margin-bottom: 25px;
+}
+
+/* ✅ Upload Box */
+.upload-box {
+  display: block;
+  border: 2px dashed #aaa;
+  border-radius: 12px;
+  padding: 25px;
+  text-align: center;
+  cursor: pointer;
+  transition: 0.3s;
+  margin-bottom: 10px;
+  background: #fafafa;
+}
+
+.upload-box:hover {
+  border-color: #667eea;
+  background: #f0f3ff;
+}
+
+.upload-box input {
+  display: none;
+}
+
+.upload-content {
+  font-size: 15px;
+  color: #555;
+}
+
+.file-name {
+  font-size: 13px;
+  color: #444;
+  margin-bottom: 10px;
+}
+
+/* Loading */
+.loading {
+  margin-top: 20px;
+  color: #555;
+}
+
+/* Transcript */
+.output {
+  margin-top: 25px;
+  text-align: left;
+  background: #f5f6fa;
+  padding: 15px;
+  border-radius: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Download */
+.download {
+  margin-top: 15px;
+  width: 100%;
+  padding: 12px;
+  background: #1e90ff;
+  color: white;
+  border-radius: 25px;
+  border: none;
+  cursor: pointer;
+}
+
+/* Tasks */
+.tasks {
+  margin-top: 20px;
+  text-align: left;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.task.done {
+  text-decoration: line-through;
+  color: gray;
+}
